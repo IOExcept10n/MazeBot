@@ -14,6 +14,7 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Printing;
 using System.Runtime.CompilerServices;
 using System.Reflection.Emit;
+using System.Linq;
 
 namespace MazeRunner
 {
@@ -31,7 +32,7 @@ namespace MazeRunner
         static void Main(string[] args)
         {
             RunMaze().GetAwaiter().GetResult();
-            Reader.ReadLine();
+            Reader.TryReadLine(out _, 10000);
         }
 
         static async Task RunMaze()
@@ -155,10 +156,11 @@ namespace MazeRunner
                             {
                                 NavigationState.ArtificalTarget = NavigationState.Target;
                             }
-                            if (input.StartsWith("/"))
+                            else if (input.StartsWith("/") && input.Length > 1)
                             {
                                 var command = input.TrimStart('/').Split();
-                                bool commandCorrect = int.TryParse(command[1], out int val);
+                                int val = 0;
+                                bool commandCorrect = command.Length == 1 || int.TryParse(command[1], out val);
                                 if (commandCorrect)
                                 {
                                     if (command[0].StartsWith("imgen"))
@@ -169,13 +171,13 @@ namespace MazeRunner
                                     else if (command[0].StartsWith("corstep"))
                                     {
                                         corrCoefficient = val;
-                                        correctionStep = logMoves * corrCoefficient;
+                                        correctionStep = genCoefficient * corrCoefficient;
                                     }
                                     else if (command[0].StartsWith("delay"))
                                     {
                                         inputDelay = val;
                                     }
-                                    else if (command[0].StartsWith("saveConfig"))
+                                    else if (command[0].StartsWith("save"))
                                     {
                                         using (StreamWriter writer = new StreamWriter($"{session}/maze_root_{moveNumber}.route"))
                                         {
@@ -184,17 +186,24 @@ namespace MazeRunner
                                                 writer.WriteLine(mov);
                                             }
                                         }
+                                        Console.WriteLine("Save success!");
+                                    }
+                                    else if (command[0].StartsWith("exit"))
+                                    {
+                                        Console.WriteLine("Goodbye!");
+                                        return;
                                     }
                                 }
                             }
                             else
                             {
                                 string[] coords = input.Replace(",", " ").Replace(";", " ").Split(' ');
-                                if (!int.TryParse(coords[0], out int x))
+                                int x = 0, y = 0;
+                                if (coords.Length > 1 && !int.TryParse(coords[0], out x))
                                 {
                                     x = NavigationState.Target.X;
                                 }
-                                if (!int.TryParse(coords[1], out int y))
+                                if (coords.Length > 1 && !int.TryParse(coords[1], out y))
                                 {
                                     y = NavigationState.Target.Y;
                                 }
