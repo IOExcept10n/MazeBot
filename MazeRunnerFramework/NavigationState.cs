@@ -1,4 +1,7 @@
-﻿namespace MazeRunner
+﻿using System.Collections;
+using System.Collections.Generic;
+
+namespace MazeRunner
 {
     public struct NavigationState
     {
@@ -25,6 +28,10 @@
         public static Vector2 UpDelta { get; set; }
 
         public static Vector2 ArtificalTarget { get; set; }
+
+        public static Stack<string> RecordedRoute { get; set; } = new Stack<string>();
+
+        public static bool IsTracingRoute => RecordedRoute.Count > 0;
 
         public int TargetX { get; set; }
 

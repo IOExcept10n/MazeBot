@@ -8,14 +8,16 @@ namespace MazeRunner
     {
         public override string MoveNext(Cell[,] maze, NavigationState state, Cell previous)
         {
-            if (state.X == NavigationState.Target.X && state.Y == NavigationState.Target.Y)
-            {
-                Debugger.Break();
-            }
             TimesVisited++;
             int availableRoutes = AvailableMoves.Count();
+
+            if (NavigationState.RecordedRoute.Count > 0)
+            {
+                return NavigationState.RecordedRoute.Pop();
+            }
+
             int lockedRoutes = 0;
-            List<Route> moves = new List<Route>();
+            List<MoveWay> moves = new List<MoveWay>();
             string cache = null;
             foreach (var move in AvailableMoves)
             {
@@ -26,7 +28,7 @@ namespace MazeRunner
                 }
                 else if (previous != cell)
                 {
-                    moves.Add(new Route(move, cell, state));
+                    moves.Add(new MoveWay(move, cell, state));
                 }
                 else
                 {
@@ -42,13 +44,13 @@ namespace MazeRunner
             return moves.OrderBy(x => x.ReversePriority).FirstOrDefault().Path;
         }
 
-        private readonly struct Route
+        private readonly struct MoveWay
         {
             public string Path { get; }
 
             public double ReversePriority { get; }
 
-            public Route(string move, Cell cell, NavigationState state)
+            public MoveWay(string move, Cell cell, NavigationState state)
             {
                 Path = move;
                 if (cell == null) ReversePriority = 1;

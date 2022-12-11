@@ -15,6 +15,7 @@ using System.Drawing.Printing;
 using System.Runtime.CompilerServices;
 using System.Reflection.Emit;
 using System.Linq;
+using Microsoft.Win32;
 
 namespace MazeRunner
 {
@@ -82,6 +83,8 @@ namespace MazeRunner
             Guid session = Guid.NewGuid();
             Stack<string> route = new Stack<string>();
 
+            Console.Title = $"MazeRunner session {session}";
+
             using (var ws = new WebSocket(wsString))
             {
                 ws.SslConfiguration.EnabledSslProtocols = System.Security.Authentication.SslProtocols.Tls13;
@@ -120,20 +123,20 @@ namespace MazeRunner
                     {
                         NavigationState.StartPosition = new Vector2(navState.X, navState.Y);
                         NavigationState.Target = new Vector2(navState.TargetX, navState.TargetY);
+                        AskForAutoRoute(inputDelay);
                     }
                     moveNumber++;
+
+                    bool rec = NavigationState.IsTracingRoute;
+
                     if (moveNumber % logMoves == 0)
                     {
+                        Console.ForegroundColor = ConsoleColor.White;
                         Console.WriteLine($"move {moveNumber}...");
+                        if (rec) Console.WriteLine("(Recorded)");
                     }
                     if (moveNumber % saveMoves == 0)
                     {
-                        //Console.ForegroundColor = ConsoleColor.Yellow;
-                        //Console.Write($"Seems like the maze is too hard to complete it with current algorithm so quick (with {moveNumber} moves).\n\r Print here path to export the maze picture to analyze it: ");
-                        //string exportPath = Console.ReadLine();
-                        //Cell.ExportMaze(exportPath, maze, navState);
-                        //Console.WriteLine("Exported successfully.");
-                        //Console.ResetColor();
 
                         Directory.CreateDirectory($"{session}");
                         string exportPath = $"{session}/maze_{moveNumber}.png";
@@ -143,7 +146,8 @@ namespace MazeRunner
                         Console.WriteLine("Autosave exported successfully.");
                         Console.ResetColor();
                     }
-                    if (moveNumber % correctionStep == 0)
+
+                    if (!rec && moveNumber % correctionStep == 0)
                     {
                         Console.ForegroundColor = ConsoleColor.Yellow;
                         Console.Beep();
@@ -190,8 +194,16 @@ namespace MazeRunner
                                     }
                                     else if (command[0].StartsWith("exit"))
                                     {
+                                        using (StreamWriter writer = new StreamWriter($"{session}/maze_root_{moveNumber}.route"))
+                                        {
+                                            foreach (var mov in route)
+                                            {
+                                                writer.WriteLine(mov);
+                                            }
+                                        }
+                                        Console.WriteLine("Saved file");
                                         Console.WriteLine("Goodbye!");
-                                        return;
+                                        Environment.Exit(0);
                                     }
                                 }
                             }
@@ -221,7 +233,7 @@ namespace MazeRunner
 
                     if (navState.TargetX != NavigationState.Target.X || navState.TargetY != NavigationState.Target.Y)
                     {
-                        using (StreamWriter writer = new StreamWriter($"{session}/maze_root_{moveNumber}.route"))
+                        using (StreamWriter writer = new StreamWriter($"{session}/maze_t_{NavigationState.Target.X}_{NavigationState.Target.Y}_s_{NavigationState.StartPosition.X}_{NavigationState.StartPosition.Y}_{moveNumber}.route"))
                         {
                             foreach (var mov in route)
                             {
@@ -232,9 +244,22 @@ namespace MazeRunner
 
                         Console.ForegroundColor = ConsoleColor.DarkCyan;
                         Console.WriteLine("Changing location data....");
+                        Console.WriteLine("==================");
+                        Console.WriteLine(e.Data);
+                        Console.WriteLine("==================");
                         NavigationState.Target = new Vector2(navState.TargetX, navState.TargetY);
                         Array.Clear(maze, 0, maze.Length);
                         NavigationState.StartPosition = new Vector2(navState.X, navState.Y);
+
+                        AskForAutoRoute(inputDelay);
+                    }
+
+                    if (!navState.Status.Equals("OK", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Console.ForegroundColor = ConsoleColor.Cyan;
+                        Console.WriteLine("INFO: Status is not equal to zero. Message to receive: ");
+                        Console.WriteLine(navState.Status);
+                        Console.WriteLine("+++++++++++++++");
                         Console.ResetColor();
                     }
 
@@ -250,7 +275,7 @@ namespace MazeRunner
                         string exportPath = $"{session}/maze_completed_{moveNumber}.png";
                         Cell.ExportMaze(exportPath, maze, navState);
 
-                        using (StreamWriter writer = new StreamWriter($"{session}/maze_root_{moveNumber}.route"))
+                        using (StreamWriter writer = new StreamWriter($"{session}/maze_t_{NavigationState.Target.X}_{NavigationState.Target.Y}_s_{NavigationState.StartPosition.X}_{NavigationState.StartPosition.Y}_{moveNumber}.route"))
                         {
                             foreach (var mov in route)
                             {
@@ -259,16 +284,29 @@ namespace MazeRunner
                         }
                         route.Clear();
 
+                        using (StreamWriter writer = new StreamWriter($"{session}/completeData_{moveNumber}.json"))
+                        {
+                            writer.WriteLine(e.Data);
+                        }
+
                         Console.WriteLine("Exported successfully!");
                         Console.ResetColor();
                         return;
                     }
+
                     Cell currentCell = maze[navState.X, navState.Y];
                     if (currentCell == null)
                     {
                         currentCell = maze[navState.X, navState.Y] = Cell.CreateCell(ConvertJObject(message.possible_moves));
                     }
                     move = currentCell.MoveNext(maze, navState, last);
+
+                    if (rec && !NavigationState.IsTracingRoute)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Magenta;
+                        Console.WriteLine("End of record. Continue moving with autopilot...");
+                        Console.ResetColor();
+                    }
 
                     if (route.Count == 0)
                     {
@@ -317,6 +355,69 @@ namespace MazeRunner
                     freeze = false;
                 }
             }
+        }
+
+        private static void AskForAutoRoute(int inputDelay)
+        {
+            Console.ForegroundColor = ConsoleColor.DarkCyan;
+            Console.WriteLine($"Current targeting data: {NavigationState.Target.X}, {NavigationState.Target.Y}; Start: {NavigationState.StartPosition.X}, {NavigationState.StartPosition.Y}");
+            Console.Write("Use loaded file preset? [Y/N]: ");
+            if (Reader.TryReadLine(out string input, inputDelay)
+                && !string.IsNullOrWhiteSpace(input)
+                && input.StartsWith("Y", StringComparison.OrdinalIgnoreCase))
+            {
+                var foundFile = Directory.EnumerateFiles("routes/").Where(x =>
+                {
+                    try
+                    {
+                        var lst = x.Split('_');
+                        int ind = Array.FindIndex(lst, y => y.StartsWith("t", StringComparison.OrdinalIgnoreCase));
+                        if (ind != -1 && lst.Length > ind + 1)
+                        {
+                            int targetX = int.Parse(lst[ind + 1]);
+                            int targetY = int.Parse(lst[ind + 2]);
+                            if (targetX != NavigationState.Target.X || targetY != NavigationState.Target.Y) return false;
+                        }
+                        return true;
+                    }
+                    catch
+                    {
+                        return false;
+                    }
+                }).OrderBy(x =>
+                {
+                    var lst = x.Split('_');
+                    int ind = Array.FindIndex(lst, y => y.StartsWith("s", StringComparison.OrdinalIgnoreCase));
+                    Console.WriteLine($"Debug index = {ind} for file {x}");
+                    if (ind != -1 && lst.Length > ind + 1)
+                    {
+                        int startX = int.Parse(lst[ind + 1]);
+                        int startY = int.Parse(lst[ind + 2]);
+                        int dist = (NavigationState.StartPosition - new Vector2(startX, startY)).LengthSquared();
+                        Console.WriteLine($"For vector with start position {startX}, {startY} distance is {dist}");
+                        return dist;
+                    }
+                    return 1000000;
+                }).FirstOrDefault();
+                if (foundFile != null)
+                {
+                    using (StreamReader reader = new StreamReader(foundFile))
+                    {
+                        NavigationState.RecordedRoute.Clear();
+                        string line;
+                        while ((line = reader.ReadLine()) != null)
+                        {
+                            NavigationState.RecordedRoute.Push(line);
+                        }
+                    }
+                    Console.WriteLine("Route has been successfully loaded! Starting tracing...");
+                }
+                else
+                {
+                    Console.WriteLine("Route not found, use default moving...");
+                }
+            }
+            Console.ResetColor();
         }
 
         private static List<string> ConvertJObject(dynamic obj)

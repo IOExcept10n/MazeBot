@@ -7,12 +7,12 @@ namespace MazeRunner
     {
         public override string MoveNext(Cell[,] maze, NavigationState state, Cell previous)
         {
-            if (state.X == NavigationState.Target.X && state.Y == NavigationState.Target.Y)
-            {
-                Debugger.Break();
-            }
             TimesVisited++;
             IsLocked = true;
+            if (NavigationState.RecordedRoute.Count > 0)
+            {
+                return NavigationState.RecordedRoute.Pop();
+            }
             return AvailableMoves.First();
         }
     }
